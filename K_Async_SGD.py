@@ -34,7 +34,7 @@ class Net(nn.Module):
 
 model = Net()
 criterion = nn.CrossEntropyLoss()
-optimizer = optim.SGD(model.parameters(), lr=0.01)
+optimizer = optim.SGD(model.parameters(), lr=0.01)      
 
 # Parameters for simulation
 K0 = 1  # Initial value of K
@@ -66,11 +66,14 @@ time_counter = 0
 t = 60
 # Simulate worker computation times with shifted exp distribution
 remaining_times = [shifted_exponential(scale, shift) for _ in range(num_workers)]
+staleness = [0 for _ in range(num_workers)]
+stale_gradients = [None for _ in range(num_workers)]
 # Training loop
 for step in range(num_steps):
     # Identify the K workers with the least remaining time
-    
-    fastest_workers = np.argsort(remaining_times)[:K]
+    srt = np.argsort(remaining_times)
+    fastest_workers = srt[:K]
+    stale_workers = srt[K:]
     curr_iter_time = remaining_times[fastest_workers[K-1]] # time at which the K-th worker finishes
     time_counter += curr_iter_time # Add to time counter
    
@@ -87,6 +90,29 @@ for step in range(num_steps):
     # K fastest workers push their updates
     for worker in fastest_workers:
         remaining_times[worker] = 0
+        optimizer.zero_grad()
+        # Apply stale gradients if enough are stored
+        if worker in stale_workers and stored_gradients[worker] is not None:
+            # Apply the stored stale gradient for this worker
+            stale_gradient = stale_gradients[worker]
+            # Load the stale gradients
+            for name, param in model.named_parameters():
+                param.grad = stale_gradients[name]
+            optimizer.step()  # Update the model with the stale gradient
+            stored_gradients[worker] = None
+        else:
+            # Compute and apply fresh gradient
+            batch_x, batch_y = next(iter(train_loader))
+
+            # Perform the update
+            outputs = model(batch_x.view(-1, 1024))
+            loss = criterion(outputs, batch_y)/(K*batch_size)
+            loss.backward() 
+    
+    # Accumulate all the gradients from the current iteration, then update the model parameters
+    optimizer.step()
+        
+    for worker in stale_workers:
         # Get a batch from the worker's dataset
         batch_x, batch_y = next(iter(train_loader))
 
@@ -94,9 +120,12 @@ for step in range(num_steps):
         optimizer.zero_grad()
         outputs = model(batch_x.view(-1, 1024))
         loss = criterion(outputs, batch_y)/(K*batch_size)
-        print(loss)
-        loss.backward()
-        optimizer.step()
+        loss.backward() 
+        # Store the stale gradients
+        current_gradients = {name: param.grad.clone() for name, param in model.named_parameters()}
+        stale_gradients[worker] = current_gradients
+    
+    
 
     # Other workers continue computing
     for i in range(num_workers):
