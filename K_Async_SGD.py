@@ -91,24 +91,26 @@ for step in range(num_steps):
     for worker in fastest_workers:
         remaining_times[worker] = 0
         optimizer.zero_grad()
-        # Apply stale gradients if enough are stored
-        if worker in stale_workers and stored_gradients[worker] is not None:
-            # Apply the stored stale gradient for this worker
-            stale_gradient = stale_gradients[worker]
-            # Load the stale gradients
-            for name, param in model.named_parameters():
-                param.grad = stale_gradients[name]
-            optimizer.step()  # Update the model with the stale gradient
-            stored_gradients[worker] = None
-        else:
-            # Compute and apply fresh gradient
+        # Compute and apply fresh gradient
+        if worker not in stale_workers or stale_gradients[worker] is None:
             batch_x, batch_y = next(iter(train_loader))
 
             # Perform the update
             outputs = model(batch_x.view(-1, 1024))
             loss = criterion(outputs, batch_y)/(K*batch_size)
-            loss.backward() 
-    
+            loss.backward()
+        else:
+            # Apply the stored stale gradient for this worker
+            stale_gradient = stale_gradients[worker]
+            # Load the stale gradients
+            for name, param in model.named_parameters():
+                if param.grad is None:
+                    param.grad = stale_gradient[name]
+                else:
+                    param.grad += stale_gradient[name]
+            
+            stored_gradients[worker] = None
+
     # Accumulate all the gradients from the current iteration, then update the model parameters
     optimizer.step()
         
