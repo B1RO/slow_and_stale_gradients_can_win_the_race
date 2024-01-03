@@ -77,12 +77,12 @@ for step in range(num_steps):
     # Update K if time_counter reaches threshold t
     if time_counter > t and K < num_workers:
         current_loss = compute_total_loss(model, train_loader, criterion)
-        K = int(K0 * np.sqrt(wstart_loss / current_loss))
+        K = int(K0 * np.sqrt(w0_loss / current_loss))
         wstart = model.state_dict()  # Update wstart
         wstart_loss = current_loss
         K0 = K
         time_counter = 0 # Reset time counter
-        print(K)
+        
     
     # K fastest workers push their updates
     for worker in fastest_workers:
@@ -93,7 +93,8 @@ for step in range(num_steps):
         # Perform the update
         optimizer.zero_grad()
         outputs = model(batch_x.view(-1, 1024))
-        loss = criterion(outputs, batch_y)/K
+        loss = criterion(outputs, batch_y)/(K*batch_size)
+        print(loss)
         loss.backward()
         optimizer.step()
 
@@ -105,4 +106,4 @@ for step in range(num_steps):
             remaining_times[i] = shifted_exponential(scale, shift)
 
 # Final evaluation of the model
-# ...
+# ...   
