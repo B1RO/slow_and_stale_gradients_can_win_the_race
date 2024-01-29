@@ -9,3 +9,8 @@ Moreover, the final test accuracy is reported for the different variants.
 
 
 
+References:
+[1]. Sanghamitra Dutta, Jianyu Wang, Gauri Joshi. "Slow and Stale Gradients Can Win The Race". arXiv preprint arXiv:2003.10579. 2020
+
+
+
